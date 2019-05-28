@@ -3,11 +3,13 @@ package com.philips.research.regression.app;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import com.google.gson.Gson;
+import com.philips.research.regression.primitives.SpdzFixedDummyDataSupplier;
 import dk.alexandra.fresco.framework.Application;
 import dk.alexandra.fresco.framework.Party;
 import dk.alexandra.fresco.framework.ProtocolEvaluator;
 import dk.alexandra.fresco.framework.builder.numeric.ProtocolBuilderNumeric;
 import dk.alexandra.fresco.framework.builder.numeric.field.BigIntegerFieldDefinition;
+import dk.alexandra.fresco.framework.builder.numeric.field.FieldDefinition;
 import dk.alexandra.fresco.framework.builder.numeric.field.FieldElement;
 import dk.alexandra.fresco.framework.configuration.NetworkConfiguration;
 import dk.alexandra.fresco.framework.configuration.NetworkConfigurationImpl;
@@ -57,10 +59,11 @@ import static com.philips.research.regression.util.VectorUtils.vectorOf;
 
 @CommandLine.Command(
     description = "Secure Multi-Party Logistic Regression",
-    name="LogisticRegression",
+    name = "LogisticRegression",
     mixinStandardHelpOptions = true,
     version = "Logistic Regression 0.1.0")
 public class LogisticRegressionApp implements Callable<Void> {
+
     @Option(
         names = {"-i", "--myId"},
         required = true,
@@ -69,7 +72,7 @@ public class LogisticRegressionApp implements Callable<Void> {
     @Option(
         names = {"-p", "--party"},
         required = true,
-        split=":",
+        split = ":",
         description = "Specification of a party. One of these needs to be present for each party. For example: '-p1:localhost:8871 -p2:localhost:8872'.")
     private String[] parties;
     @Option(
@@ -120,7 +123,8 @@ public class LogisticRegressionApp implements Callable<Void> {
         Matrix<BigDecimal> m = map(matrix(input.predictors), BigDecimal::valueOf);
         Vector<BigDecimal> v = vectorOf(input.outcomes);
 
-        LogisticRegression frescoApp = new LogisticRegression(myId, m, v, lambda, iterations, privacyBudget, sensitivity);
+        LogisticRegression frescoApp = new LogisticRegression(myId, m, v, lambda, iterations,
+            privacyBudget, sensitivity);
         ApplicationRunner<List<BigDecimal>> runner = createRunner(myId, createPartyMap());
 
         List<BigDecimal> result = runner.run(frescoApp);
@@ -130,7 +134,8 @@ public class LogisticRegressionApp implements Callable<Void> {
         return null;
     }
 
-    private ApplicationRunner<List<BigDecimal>> createRunner(int myId, HashMap<Integer, Party> partyMap) {
+    private ApplicationRunner<List<BigDecimal>> createRunner(int myId,
+        HashMap<Integer, Party> partyMap) {
         if (dummyArithmetic) {
             return new DummyRunner<>(myId, partyMap);
         } else {
@@ -146,23 +151,25 @@ public class LogisticRegressionApp implements Callable<Void> {
     }
 
     private class Input {
+
         Double[][] predictors;
         double[] outcomes;
     }
 
     private HashMap<Integer, Party> createPartyMap() {
         HashMap<Integer, Party> partyMap = new HashMap<>();
-        for (int p = 0; p < parties.length/3; ++p) {
-            int partyId = Integer.parseInt(parties[p*3]);
-            String host = parties[p*3 + 1];
-            int port = Integer.parseInt(parties[p*3 + 2]);
+        for (int p = 0; p < parties.length / 3; ++p) {
+            int partyId = Integer.parseInt(parties[p * 3]);
+            String host = parties[p * 3 + 1];
+            int port = Integer.parseInt(parties[p * 3 + 2]);
             partyMap.put(partyId, new Party(partyId, host, port));
         }
         return partyMap;
     }
 }
 
-abstract class ApplicationRunner <Output> {
+abstract class ApplicationRunner<Output> {
+
     final int modBitLength = 512;
     NetworkFactory networkFactory;
     Network network;
@@ -179,11 +186,11 @@ abstract class ApplicationRunner <Output> {
 
     void close() throws IOException {
         networkFactory.close();
-        ((Closeable)network).close();
+        ((Closeable) network).close();
     }
 }
 
-class SpdzRunner <Output> extends ApplicationRunner<Output> {
+class SpdzRunner<Output> extends ApplicationRunner<Output> {
 
     private static final int PRG_SEED_LENGTH = 256;
     private static final int MAX_BIT_LENGTH = 200;
@@ -196,39 +203,55 @@ class SpdzRunner <Output> extends ApplicationRunner<Output> {
         super(myId, partyMap);
         int numberOfPlayers = partyMap.size();
 
-        SpdzProtocolSuite protocolSuite = new SpdzProtocolSuite(MAX_BIT_LENGTH, FIXED_POINT_PRECISION);
-        BatchEvaluationStrategy<SpdzResourcePool> strategy = EvaluationStrategy.SEQUENTIAL.getStrategy();
+        SpdzProtocolSuite protocolSuite = new SpdzProtocolSuite(MAX_BIT_LENGTH,
+            FIXED_POINT_PRECISION);
+        BatchEvaluationStrategy<SpdzResourcePool> strategy = EvaluationStrategy.SEQUENTIAL
+            .getStrategy();
         strategy = new BatchEvaluationLoggingDecorator<>(strategy);
-        ProtocolEvaluator<SpdzResourcePool> evaluator = new BatchedProtocolEvaluator<>(strategy, protocolSuite);
+        ProtocolEvaluator<SpdzResourcePool> evaluator = new BatchedProtocolEvaluator<>(strategy,
+            protocolSuite);
         evaluator = new EvaluatorLoggingDecorator<>(evaluator);
         sce = new SecureComputationEngineImpl<>(protocolSuite, evaluator);
 
         SpdzOpenedValueStoreImpl store = new SpdzOpenedValueStoreImpl();
+        SpdzDataSupplier supplier = getSpdzDummyDataSupplier(myId, numberOfPlayers);
+        resourcePool = new SpdzResourcePoolImpl(myId, numberOfPlayers, store, supplier,
+            getDrbg(myId));
+    }
+
+    private SpdzDataSupplier getSpdzDummyDataSupplier(int myId, int numberOfPlayers) {
+        final FieldDefinition definition = new BigIntegerFieldDefinition(modulus);
+        return new SpdzFixedDummyDataSupplier(myId, numberOfPlayers, definition);
+    }
+
+    private SpdzDataSupplier getMascotSupplier(int myId, Map<Integer, Party> partyMap,
+        int numberOfPlayers,
+        SpdzProtocolSuite protocolSuite) {
         Drbg drbg = getDrbg(myId);
         List<Integer> partyIds = new ArrayList<>(partyMap.keySet());
         Map<Integer, RotList> seedOts = getSeedOts(myId, partyIds, PRG_SEED_LENGTH, drbg, network);
-        final BigIntegerFieldDefinition definition = new BigIntegerFieldDefinition(modulus);
+        final FieldDefinition definition = new BigIntegerFieldDefinition(modulus);
         FieldElement ssk = SpdzMascotDataSupplier.createRandomSsk(definition, PRG_SEED_LENGTH);
         PreprocessedValuesSupplier preprocessedValuesSupplier
-            = new PreprocessedValuesSupplier(myId, numberOfPlayers, networkFactory, protocolSuite, modBitLength, definition, seedOts, drbg, ssk, MAX_BIT_LENGTH);
-        SpdzDataSupplier supplier = SpdzMascotDataSupplier.createSimpleSupplier(
+            = new PreprocessedValuesSupplier(myId, numberOfPlayers, networkFactory, protocolSuite,
+            modBitLength, definition, seedOts, drbg, ssk, MAX_BIT_LENGTH);
+        return SpdzMascotDataSupplier.createSimpleSupplier(
             myId, numberOfPlayers,
             () -> networkFactory.createExtraNetwork(myId),
             modBitLength, definition,
             preprocessedValuesSupplier::provide,
             seedOts, drbg, ssk);
-        resourcePool = new SpdzResourcePoolImpl(myId, numberOfPlayers, store, supplier, getDrbg(myId));
     }
 
     private Drbg getDrbg(int myId) {
         // This method was copied from Fresco AbstractSpdzTest
         byte[] seed = new byte[SpdzRunner.PRG_SEED_LENGTH / 8];
-        new Random(myId).nextBytes(seed);
+//        new Random(myId).nextBytes(seed);
         return AesCtrDrbgFactory.fromDerivedSeed(seed);
     }
 
     private Map<Integer, RotList> getSeedOts(int myId, List<Integer> partyIds, int prgSeedLength,
-                                             Drbg drbg, Network network) {
+        Drbg drbg, Network network) {
         // This method was copied from Fresco AbstractSpdzTest
         Map<Integer, RotList> seedOts = new HashMap<>();
         for (Integer otherId : partyIds) {
@@ -261,7 +284,7 @@ class SpdzRunner <Output> extends ApplicationRunner<Output> {
     }
 }
 
-class DummyRunner <Output> extends ApplicationRunner<Output> {
+class DummyRunner<Output> extends ApplicationRunner<Output> {
 
     private DummyArithmeticResourcePoolImpl resourcePool;
     private SecureComputationEngine<DummyArithmeticResourcePool, ProtocolBuilderNumeric> sce;
@@ -270,9 +293,12 @@ class DummyRunner <Output> extends ApplicationRunner<Output> {
         super(myId, partyMap);
 
         final BigIntegerFieldDefinition definition = new BigIntegerFieldDefinition(modulus);
-        DummyArithmeticProtocolSuite protocolSuite = new DummyArithmeticProtocolSuite(definition,200,16);
-        BatchEvaluationStrategy<DummyArithmeticResourcePool> strategy = EvaluationStrategy.SEQUENTIAL.getStrategy();
-        ProtocolEvaluator<DummyArithmeticResourcePool> evaluator = new BatchedProtocolEvaluator<>(strategy, protocolSuite);
+        DummyArithmeticProtocolSuite protocolSuite = new DummyArithmeticProtocolSuite(definition,
+            200, 16);
+        BatchEvaluationStrategy<DummyArithmeticResourcePool> strategy = EvaluationStrategy.SEQUENTIAL
+            .getStrategy();
+        ProtocolEvaluator<DummyArithmeticResourcePool> evaluator = new BatchedProtocolEvaluator<>(
+            strategy, protocolSuite);
         sce = new SecureComputationEngineImpl<>(protocolSuite, evaluator);
 
         resourcePool = new DummyArithmeticResourcePoolImpl(myId, partyMap.size(), definition);
@@ -289,14 +315,15 @@ class DummyRunner <Output> extends ApplicationRunner<Output> {
         sce.shutdownSCE();
     }
 }
- class NetworkFactory implements Closeable {
+
+class NetworkFactory implements Closeable {
 
     private static final AtomicInteger PORT_OFFSET_COUNTER = new AtomicInteger(50);
     private static final int PORT_INCREMENT = 10;
     private final List<Closeable> openedNetworks;
-     private final Map<Integer, Party> parties;
+    private final Map<Integer, Party> parties;
 
-     public NetworkFactory(Map<Integer, Party> parties) {
+    public NetworkFactory(Map<Integer, Party> parties) {
         this.parties = parties;
         this.openedNetworks = new ArrayList<>();
     }
@@ -313,11 +340,11 @@ class DummyRunner <Output> extends ApplicationRunner<Output> {
         return net;
     }
 
-     private Party applyOffset(int portOffset, Party party) {
-         return new Party(party.getPartyId(), party.getHostname(), party.getPort() + portOffset);
-     }
+    private Party applyOffset(int portOffset, Party party) {
+        return new Party(party.getPartyId(), party.getHostname(), party.getPort() + portOffset);
+    }
 
-     @Override
+    @Override
     public void close() {
         openedNetworks.forEach(this::close);
     }

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Vector;
 
 public class VectorUtils {
+
     public static BigDecimal multiply(List<BigDecimal> v1, List<BigDecimal> v2) {
         BigDecimal result = BigDecimal.ZERO;
         for (int i = 0; i < v1.size(); ++i) {
@@ -17,6 +18,11 @@ public class VectorUtils {
     public static Vector<BigDecimal> vectorWithZeros(int size) {
         BigDecimal[] zeros = BigDecimalUtils.zeros(size);
         return new Vector<>(Arrays.asList(zeros));
+    }
+
+    public static Vector<BigDecimal> vectorWithNull(int size) {
+        BigDecimal[] nulls = BigDecimalUtils.zeros(size);
+        return new Vector<>(Arrays.asList(nulls));
     }
 
     public static Vector<BigDecimal> vectorOf(double... doubles) {

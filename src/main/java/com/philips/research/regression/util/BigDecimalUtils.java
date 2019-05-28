@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 public class BigDecimalUtils {
+
     public static BigDecimal[] arrayOf(double... doubles) {
         return Arrays.stream(doubles).mapToObj(BigDecimal::valueOf).toArray(BigDecimal[]::new);
     }
@@ -18,5 +19,11 @@ public class BigDecimalUtils {
         BigDecimal[] zeros = new BigDecimal[size];
         Arrays.fill(zeros, new BigDecimal(0));
         return zeros;
+    }
+
+    static BigDecimal[] nulls(int size) {
+        BigDecimal[] nulls = new BigDecimal[size];
+        Arrays.fill(nulls, null);
+        return nulls;
     }
 }

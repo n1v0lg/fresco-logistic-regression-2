@@ -18,25 +18,30 @@ import dk.alexandra.fresco.suite.spdz.SpdzProtocolSuite;
 import dk.alexandra.fresco.suite.spdz.SpdzResourcePool;
 import dk.alexandra.fresco.suite.spdz.SpdzResourcePoolImpl;
 import dk.alexandra.fresco.suite.spdz.datatypes.SpdzSInt;
+import dk.alexandra.fresco.suite.spdz.storage.SpdzDataSupplier;
 import dk.alexandra.fresco.suite.spdz.storage.SpdzMascotDataSupplier;
 import dk.alexandra.fresco.tools.ot.otextension.RotList;
 
 import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import static com.philips.research.regression.util.ListConversions.unwrap;
 
 class PreprocessedValuesSupplier {
+
     private final CloseableNetwork pipeNetwork;
-    private final SpdzMascotDataSupplier tripleSupplier;
+    private final SpdzDataSupplier tripleSupplier;
     private final int maxBitLength;
     private final SpdzProtocolSuite protocolSuite;
     private final int myId;
     private final int numberOfPlayers;
-    private final Drbg drbg;
+    private final Supplier<Drbg> drbg;
 
-    PreprocessedValuesSupplier(int myId, int numberOfPlayers, NetworkFactory networkFactory, SpdzProtocolSuite protocolSuite, int modBitLength, FieldDefinition definition, Map<Integer, RotList> seedOts, Drbg drbg, FieldElement ssk, int maxBitLength) {
+    PreprocessedValuesSupplier(int myId, int numberOfPlayers, NetworkFactory networkFactory,
+        SpdzProtocolSuite protocolSuite, int modBitLength, FieldDefinition definition,
+        Map<Integer, RotList> seedOts, Supplier<Drbg> drbg, FieldElement ssk, int maxBitLength) {
         this.pipeNetwork = networkFactory.createExtraNetwork(myId);
         this.tripleSupplier = SpdzMascotDataSupplier.createSimpleSupplier(
             myId,
@@ -45,7 +50,7 @@ class PreprocessedValuesSupplier {
             modBitLength,
             definition,
             null,
-            seedOts, drbg, ssk);
+            seedOts, drbg.get(), ssk);
         this.maxBitLength = maxBitLength;
         this.protocolSuite = protocolSuite;
         this.myId = myId;
@@ -73,11 +78,11 @@ class PreprocessedValuesSupplier {
             numberOfPlayers,
             new OpenedValueStoreImpl<>(),
             tripleSupplier,
-            drbg);
+            drbg.get());
     }
 
     private void evaluate(ProtocolBuilderNumeric spdzBuilder, SpdzResourcePool tripleResourcePool,
-                          Network network) {
+        Network network) {
         BatchedStrategy<SpdzResourcePool> batchedStrategy = new BatchedStrategy<>();
         SpdzProtocolSuite spdzProtocolSuite = new SpdzProtocolSuite(maxBitLength);
         BatchedProtocolEvaluator<SpdzResourcePool> batchedProtocolEvaluator =

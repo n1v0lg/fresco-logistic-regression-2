@@ -11,30 +11,41 @@ import dk.alexandra.fresco.suite.spdz.datatypes.SpdzTriple;
 import dk.alexandra.fresco.suite.spdz.storage.SpdzDataSupplier;
 import java.math.BigInteger;
 import java.util.List;
+import java.util.function.Function;
 
-public class SpdzFixedDummyDataSupplier implements SpdzDataSupplier {
+public class SpdzDummyWithExpPipesDataSupplier implements SpdzDataSupplier {
 
     private final int myId;
     private final ArithmeticDummyDataSupplier supplier;
     private final FieldDefinition fieldDefinition;
     private final BigInteger wholeKey;
     private final BigInteger myKeyShare;
-    private final int expPipeLength;
+    private final Function<Integer, SpdzSInt[]> preprocessedValues;
 
-    public SpdzFixedDummyDataSupplier(int myId, int noOfPlayers, FieldDefinition fieldDefinition) {
-        this(myId, noOfPlayers, fieldDefinition, 200);
+
+    public SpdzDummyWithExpPipesDataSupplier(int myId, int noOfPlayers,
+        FieldDefinition fieldDefinition,
+        Function<Integer, SpdzSInt[]> preprocessedValues) {
+        this(myId, noOfPlayers, fieldDefinition, preprocessedValues,
+            createKeyPair(myId, noOfPlayers, fieldDefinition.getModulus()));
     }
 
-    public SpdzFixedDummyDataSupplier(int myId, int noOfPlayers, FieldDefinition fieldDefinition,
-        int expPipeLength) {
+    public SpdzDummyWithExpPipesDataSupplier(int myId, int noOfPlayers,
+        FieldDefinition fieldDefinition,
+        Function<Integer, SpdzSInt[]> preprocessedValues,
+        Pair<BigInteger, BigInteger> keyPair) {
         this.myId = myId;
         this.fieldDefinition = fieldDefinition;
-        this.expPipeLength = expPipeLength;
         this.supplier =
             new ArithmeticDummyDataSupplier(myId, noOfPlayers, fieldDefinition.getModulus());
-        final Pair<BigInteger, BigInteger> keyPair = supplier.getRandomElementShare();
         this.wholeKey = keyPair.getFirst();
         this.myKeyShare = keyPair.getSecond();
+        this.preprocessedValues = preprocessedValues;
+    }
+
+    public static Pair<BigInteger, BigInteger> createKeyPair(int myId, int noOfPlayers,
+        BigInteger modulus) {
+        return new ArithmeticDummyDataSupplier(myId, noOfPlayers, modulus).getRandomElementShare();
     }
 
     @Override
@@ -48,10 +59,11 @@ public class SpdzFixedDummyDataSupplier implements SpdzDataSupplier {
 
     @Override
     public SpdzSInt[] getNextExpPipe() {
-        List<Pair<BigInteger, BigInteger>> rawExpPipe = supplier.getExpPipe(expPipeLength);
-        return rawExpPipe.stream()
-            .map(this::toSpdzSInt)
-            .toArray(SpdzSInt[]::new);
+//        List<Pair<BigInteger, BigInteger>> rawExpPipe = supplier.getExpPipe(200);
+//        return rawExpPipe.stream()
+//            .map(this::toSpdzSInt)
+//            .toArray(SpdzSInt[]::new);
+        return this.preprocessedValues.apply(200);
     }
 
     @Override

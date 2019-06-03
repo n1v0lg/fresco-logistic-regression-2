@@ -1,8 +1,13 @@
 package com.philips.research.regression.app;
 
+import static com.philips.research.regression.util.MatrixConstruction.matrix;
+import static com.philips.research.regression.util.MatrixConversions.map;
+import static com.philips.research.regression.util.VectorUtils.vectorOf;
+
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import com.google.gson.Gson;
+import com.philips.research.regression.primitives.SpdzDummyWithExpPipesDataSupplier;
 import com.philips.research.regression.primitives.SpdzFixedDummyDataSupplier;
 import dk.alexandra.fresco.framework.Application;
 import dk.alexandra.fresco.framework.Party;
@@ -21,7 +26,12 @@ import dk.alexandra.fresco.framework.sce.SecureComputationEngineImpl;
 import dk.alexandra.fresco.framework.sce.evaluator.BatchEvaluationStrategy;
 import dk.alexandra.fresco.framework.sce.evaluator.BatchedProtocolEvaluator;
 import dk.alexandra.fresco.framework.sce.evaluator.EvaluationStrategy;
-import dk.alexandra.fresco.framework.util.*;
+import dk.alexandra.fresco.framework.util.AesCtrDrbg;
+import dk.alexandra.fresco.framework.util.AesCtrDrbgFactory;
+import dk.alexandra.fresco.framework.util.Drbg;
+import dk.alexandra.fresco.framework.util.ExceptionConverter;
+import dk.alexandra.fresco.framework.util.ModulusFinder;
+import dk.alexandra.fresco.framework.util.Pair;
 import dk.alexandra.fresco.lib.collections.Matrix;
 import dk.alexandra.fresco.logging.BatchEvaluationLoggingDecorator;
 import dk.alexandra.fresco.logging.EvaluatorLoggingDecorator;
@@ -38,24 +48,24 @@ import dk.alexandra.fresco.suite.spdz.storage.SpdzOpenedValueStoreImpl;
 import dk.alexandra.fresco.tools.ot.base.DummyOt;
 import dk.alexandra.fresco.tools.ot.base.Ot;
 import dk.alexandra.fresco.tools.ot.otextension.RotList;
-import org.slf4j.LoggerFactory;
-import picocli.CommandLine;
-import picocli.CommandLine.Option;
-
 import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.util.*;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Vector;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
-
-import static com.philips.research.regression.util.MatrixConstruction.matrix;
-import static com.philips.research.regression.util.MatrixConversions.map;
-import static com.philips.research.regression.util.VectorUtils.vectorOf;
+import org.slf4j.LoggerFactory;
+import picocli.CommandLine;
+import picocli.CommandLine.Option;
 
 @CommandLine.Command(
     description = "Secure Multi-Party Logistic Regression",
@@ -214,14 +224,35 @@ class SpdzRunner<Output> extends ApplicationRunner<Output> {
         sce = new SecureComputationEngineImpl<>(protocolSuite, evaluator);
 
         SpdzOpenedValueStoreImpl store = new SpdzOpenedValueStoreImpl();
-        SpdzDataSupplier supplier = getSpdzDummyDataSupplier(myId, numberOfPlayers);
+        SpdzDataSupplier supplier = getSpdzDummyExpPipeDataSupplier(myId, partyMap, numberOfPlayers,
+            protocolSuite);
         resourcePool = new SpdzResourcePoolImpl(myId, numberOfPlayers, store, supplier,
-            getDrbg(myId));
+            new AesCtrDrbg(new byte[32]));
     }
 
     private SpdzDataSupplier getSpdzDummyDataSupplier(int myId, int numberOfPlayers) {
         final FieldDefinition definition = new BigIntegerFieldDefinition(modulus);
         return new SpdzFixedDummyDataSupplier(myId, numberOfPlayers, definition);
+    }
+
+    private SpdzDataSupplier getSpdzDummyExpPipeDataSupplier(int myId, Map<Integer, Party> partyMap,
+        int numberOfPlayers,
+        SpdzProtocolSuite protocolSuite) {
+        final FieldDefinition definition = new BigIntegerFieldDefinition(modulus);
+        Drbg drbg = getDrbg(myId);
+        List<Integer> partyIds = new ArrayList<>(partyMap.keySet());
+        Map<Integer, RotList> seedOts = getSeedOts(myId, partyIds, PRG_SEED_LENGTH, drbg, network);
+
+        Pair<BigInteger, BigInteger> keyPair = SpdzDummyWithExpPipesDataSupplier
+            .createKeyPair(myId, numberOfPlayers, modulus);
+
+        PreprocessedValuesSupplier preprocessedValuesSupplier
+            = new PreprocessedValuesSupplier(myId, numberOfPlayers, networkFactory, protocolSuite,
+            modBitLength, definition, seedOts, () -> drbg,
+            definition.createElement(keyPair.getSecond()), MAX_BIT_LENGTH);
+
+        return new SpdzDummyWithExpPipesDataSupplier(myId, numberOfPlayers, definition,
+            preprocessedValuesSupplier::provide, keyPair);
     }
 
     private SpdzDataSupplier getMascotSupplier(int myId, Map<Integer, Party> partyMap,
@@ -234,7 +265,7 @@ class SpdzRunner<Output> extends ApplicationRunner<Output> {
         FieldElement ssk = SpdzMascotDataSupplier.createRandomSsk(definition, PRG_SEED_LENGTH);
         PreprocessedValuesSupplier preprocessedValuesSupplier
             = new PreprocessedValuesSupplier(myId, numberOfPlayers, networkFactory, protocolSuite,
-            modBitLength, definition, seedOts, drbg, ssk, MAX_BIT_LENGTH);
+            modBitLength, definition, seedOts, () -> drbg, ssk, MAX_BIT_LENGTH);
         return SpdzMascotDataSupplier.createSimpleSupplier(
             myId, numberOfPlayers,
             () -> networkFactory.createExtraNetwork(myId),
@@ -274,7 +305,7 @@ class SpdzRunner<Output> extends ApplicationRunner<Output> {
 
     @Override
     public Output run(Application<Output, ProtocolBuilderNumeric> application) {
-        return sce.runApplication(application, resourcePool, network);
+        return sce.runApplication(application, resourcePool, network, Duration.ofMinutes(60));
     }
 
     @Override

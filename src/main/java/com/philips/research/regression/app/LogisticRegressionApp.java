@@ -226,6 +226,8 @@ class SpdzRunner<Output> extends ApplicationRunner<Output> {
         SpdzOpenedValueStoreImpl store = new SpdzOpenedValueStoreImpl();
         SpdzDataSupplier supplier = getSpdzDummyExpPipeDataSupplier(myId, partyMap, numberOfPlayers,
             protocolSuite);
+//        SpdzDataSupplier supplier = getMascotSupplier(myId, partyMap, numberOfPlayers,
+//            protocolSuite);
         resourcePool = new SpdzResourcePoolImpl(myId, numberOfPlayers, store, supplier,
             new AesCtrDrbg(new byte[32]));
     }
@@ -248,7 +250,7 @@ class SpdzRunner<Output> extends ApplicationRunner<Output> {
 
         PreprocessedValuesSupplier preprocessedValuesSupplier
             = new PreprocessedValuesSupplier(myId, numberOfPlayers, networkFactory, protocolSuite,
-            modBitLength, definition, seedOts, () -> drbg,
+            modBitLength, definition, seedOts,
             definition.createElement(keyPair.getSecond()), MAX_BIT_LENGTH);
 
         return new SpdzDummyWithExpPipesDataSupplier(myId, numberOfPlayers, definition,
@@ -265,7 +267,7 @@ class SpdzRunner<Output> extends ApplicationRunner<Output> {
         FieldElement ssk = SpdzMascotDataSupplier.createRandomSsk(definition, PRG_SEED_LENGTH);
         PreprocessedValuesSupplier preprocessedValuesSupplier
             = new PreprocessedValuesSupplier(myId, numberOfPlayers, networkFactory, protocolSuite,
-            modBitLength, definition, seedOts, () -> drbg, ssk, MAX_BIT_LENGTH);
+            modBitLength, definition, seedOts, ssk, MAX_BIT_LENGTH);
         return SpdzMascotDataSupplier.createSimpleSupplier(
             myId, numberOfPlayers,
             () -> networkFactory.createExtraNetwork(myId),
